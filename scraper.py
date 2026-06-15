@@ -155,3 +155,6 @@ def analyze_company(company_name, progress_callback=None):
         label = "Presence faible"
     else:
         label = "Absent du digital"
+results["score"] = {"total": score, "max": 100, "details": details, "label": label}
+    results["company_name"] = company_name
+    return results
