@@ -1,5 +1,7 @@
 import asyncio
 import re
+import os
+import glob
 from playwright.async_api import async_playwright
 
 
@@ -7,112 +9,95 @@ def clean_name(name):
     return re.sub(r"[^a-z0-9]", "", name.lower())
 
 
-async def check_page(page, url, slug, bad_words, good_words):
-    try:
-        await page.goto(url, timeout=20000, wait_until="domcontentloaded")
-        await page.wait_for_timeout(2000)
-        content = (await page.content()).lower()
-        final_url = page.url.lower()
-        if any(b in content for b in bad_words):
-            return False
-        if slug in final_url:
-            return True
-        if any(g in content for g in good_words):
-            return True
-        return False
-    except Exception:
-        return False
-
-
-def make_result(platform, found, slug, path):
-    url = path.format(slug=slug) if found else None
-    return {
-        "platform": platform,
-        "found": found,
-        "url": url,
-        "active": found,
-        "followers": None,
-        "error": None,
-    }
+def find_chromium():
+    patterns = [
+        "/opt/render/.cache/ms-playwright/**/chrome-headless-shell",
+        "/opt/render/.cache/ms-playwright/**/chromium",
+        "/opt/render/.cache/ms-playwright/**/chrome",
+        "/root/.cache/ms-playwright/**/chrome-headless-shell",
+        "/home/**/.cache/ms-playwright/**/chrome-headless-shell",
+    ]
+    for pattern in patterns:
+        matches = glob.glob(pattern, recursive=True)
+        if matches:
+            return matches[0]
+    return None
 
 
 async def run_analysis(company_name, progress_callback=None):
     slug = clean_name(company_name)
     results = {}
-    chromium_path = (
-        "/opt/render/.cache/ms-playwright/"
-        "chromium_headless_shell-1223/"
-        "chrome-headless-shell-linux64/"
-        "chrome-headless-shell"
-    )
+
+    chromium = find_chromium()
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            executable_path=chromium_path,
-        )
+        launch_args = {"headless": True}
+        if chromium:
+            launch_args["executable_path"] = chromium
+
+        browser = await p.chromium.launch(**launch_args)
         context = await browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            )
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         )
         page = await context.new_page()
 
+        async def check(url, bad, good):
+            try:
+                await page.goto(url, timeout=20000, wait_until="domcontentloaded")
+                await page.wait_for_timeout(2000)
+                content = (await page.content()).lower()
+                final = page.url.lower()
+                if any(b in content for b in bad):
+                    return False
+                if slug in final:
+                    return True
+                if any(g in content for g in good):
+                    return True
+                return False
+            except Exception:
+                return False
+
         if progress_callback:
             progress_callback("Verification Instagram...")
-        ig = await check_page(
-            page,
+        ig = await check(
             f"https://www.instagram.com/{slug}/",
-            slug,
             ["page not found", "page introuvable", "sorry, this page"],
-            ["followers", "posts", slug],
-        )
-        results["instagram"] = make_result(
-            "Instagram", ig, slug, "https://www.instagram.com/{slug}/"
+            ["followers", "posts", slug]
         )
 
         if progress_callback:
             progress_callback("Verification TikTok...")
-        tt = await check_page(
-            page,
+        tt = await check(
             f"https://www.tiktok.com/@{slug}",
-            slug,
             ["couldn't find this account", "ce compte est introuvable"],
-            [slug, "followers"],
-        )
-        results["tiktok"] = make_result(
-            "TikTok", tt, slug, "https://www.tiktok.com/@{slug}"
+            [slug, "followers"]
         )
 
         if progress_callback:
             progress_callback("Verification Facebook...")
-        fb = await check_page(
-            page,
+        fb = await check(
             f"https://www.facebook.com/{slug}",
-            slug,
             ["this page isn't available", "page not found"],
-            [slug, "facebook"],
-        )
-        results["facebook"] = make_result(
-            "Facebook", fb, slug, "https://www.facebook.com/{slug}"
+            [slug, "facebook"]
         )
 
         if progress_callback:
             progress_callback("Verification LinkedIn...")
-        li = await check_page(
-            page,
+        li = await check(
             f"https://www.linkedin.com/company/{slug}",
-            slug,
             ["page introuvable", "no organization found"],
-            [slug, "linkedin"],
-        )
-        results["linkedin"] = make_result(
-            "LinkedIn", li, slug, "https://www.linkedin.com/company/{slug}"
+            [slug, "linkedin"]
         )
 
         await browser.close()
+
+    def make(platform, found, url):
+        return {"platform": platform, "found": found, "url": url if found else None, "active": found, "followers": None, "error": None}
+
+    results["instagram"] = make("Instagram", ig, f"https://www.instagram.com/{slug}/")
+    results["tiktok"] = make("TikTok", tt, f"https://www.tiktok.com/@{slug}")
+    results["facebook"] = make("Facebook", fb, f"https://www.facebook.com/{slug}")
+    results["linkedin"] = make("LinkedIn", li, f"https://www.linkedin.com/company/{slug}")
 
     score = 0
     details = {}
@@ -133,12 +118,7 @@ async def run_analysis(company_name, progress_callback=None):
     else:
         label = "Absent du digital"
 
-    results["score"] = {
-        "total": score,
-        "max": 100,
-        "details": details,
-        "label": label,
-    }
+    results["score"] = {"total": score, "max": 100, "details": details, "label": label}
     results["company_name"] = company_name
     return results
 
