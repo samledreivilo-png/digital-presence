@@ -56,7 +56,7 @@ if analyze_button and company_name.strip():
         counter[0] += 1
 
     try:
-        results = analyze_company(company_name.strip(), progress_callback=update_progress)
+        results = analyze_company(company_name.strip(), country=country.strip() if country.strip() else "Malta", progress_callback=update_progress)
     except Exception as e:
         st.error(f"Erreur : {e}")
         st.stop()
