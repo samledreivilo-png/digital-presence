@@ -1,7 +1,6 @@
 import asyncio
 import re
-import os
-import glob
+import subprocess
 from playwright.async_api import async_playwright
 
 
@@ -9,33 +8,25 @@ def clean_name(name):
     return re.sub(r"[^a-z0-9]", "", name.lower())
 
 
-def find_chromium():
-    patterns = [
-        "/opt/render/.cache/ms-playwright/**/chrome-headless-shell",
-        "/opt/render/.cache/ms-playwright/**/chromium",
-        "/opt/render/.cache/ms-playwright/**/chrome",
-        "/root/.cache/ms-playwright/**/chrome-headless-shell",
-        "/home/**/.cache/ms-playwright/**/chrome-headless-shell",
-    ]
-    for pattern in patterns:
-        matches = glob.glob(pattern, recursive=True)
-        if matches:
-            return matches[0]
-    return None
+def ensure_chromium():
+    try:
+        subprocess.run(
+            ["python", "-m", "playwright", "install", "chromium"],
+            capture_output=True,
+            timeout=120
+        )
+    except Exception:
+        pass
 
 
 async def run_analysis(company_name, progress_callback=None):
     slug = clean_name(company_name)
     results = {}
 
-    chromium = find_chromium()
+    ensure_chromium()
 
     async with async_playwright() as p:
-        launch_args = {"headless": True}
-        if chromium:
-            launch_args["executable_path"] = chromium
-
-        browser = await p.chromium.launch(**launch_args)
+        browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         )
