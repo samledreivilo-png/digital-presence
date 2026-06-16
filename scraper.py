@@ -7,12 +7,15 @@ SERPAPI_KEY = os.environ.get("SERPAPI_KEY", "")
 def clean_name(name):
     return re.sub(r"[^a-z0-9]", "", name.lower()).strip()
 
-def search_social(company, platform, site):
+def search_social(company, platform, site, country):
     try:
         slug = clean_name(company)
+        country_query = country.strip() if country.strip() else "Malta"
         params = {
             "engine": "google",
-            "q": f"{company} {platform} officiel",
+            "q": f"{company} {platform} {country_query}",
+            "gl": "mt",
+            "hl": "en",
             "api_key": SERPAPI_KEY,
             "num": 5,
         }
@@ -33,27 +36,27 @@ def search_social(company, platform, site):
     except Exception:
         return False, None
 
-def analyze_company(company_name, progress_callback=None):
+def analyze_company(company_name, country="Malta", progress_callback=None):
     results = {}
 
     if progress_callback:
         progress_callback("Verification Instagram...")
-    ig, ig_url = search_social(company_name, "instagram", "instagram.com")
+    ig, ig_url = search_social(company_name, "instagram", "instagram.com", country)
     results["instagram"] = {"platform": "Instagram", "found": ig, "url": ig_url, "active": ig, "followers": None, "error": None}
 
     if progress_callback:
         progress_callback("Verification TikTok...")
-    tt, tt_url = search_social(company_name, "tiktok", "tiktok.com")
+    tt, tt_url = search_social(company_name, "tiktok", "tiktok.com", country)
     results["tiktok"] = {"platform": "TikTok", "found": tt, "url": tt_url, "active": tt, "followers": None, "error": None}
 
     if progress_callback:
         progress_callback("Verification Facebook...")
-    fb, fb_url = search_social(company_name, "facebook", "facebook.com")
+    fb, fb_url = search_social(company_name, "facebook", "facebook.com", country)
     results["facebook"] = {"platform": "Facebook", "found": fb, "url": fb_url, "active": fb, "followers": None, "error": None}
 
     if progress_callback:
         progress_callback("Verification LinkedIn...")
-    li, li_url = search_social(company_name, "linkedin", "linkedin.com")
+    li, li_url = search_social(company_name, "linkedin", "linkedin.com", country)
     results["linkedin"] = {"platform": "LinkedIn", "found": li, "url": li_url, "active": li, "followers": None, "error": None}
 
     score = 0
