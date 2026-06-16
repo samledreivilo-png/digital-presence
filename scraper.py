@@ -1,94 +1,53 @@
-import asyncio
+import os
 import re
-import subprocess
-from playwright.async_api import async_playwright
+import requests
 
+SERPAPI_KEY = os.environ.get("SERPAPI_KEY", "")
 
 def clean_name(name):
-    return re.sub(r"[^a-z0-9]", "", name.lower())
+    return re.sub(r"[^a-z0-9\s]", "", name.lower()).strip()
 
-
-def ensure_chromium():
+def search_social(company, platform, site):
     try:
-        subprocess.run(
-            ["python", "-m", "playwright", "install", "chromium"],
-            capture_output=True,
-            timeout=120
-        )
-    except Exception:
-        pass
+        params = {
+            "engine": "google",
+            "q": f"{company} {platform} site:{site}",
+            "api_key": SERPAPI_KEY,
+            "num": 3,
+        }
+        r = requests.get("https://serpapi.com/search", params=params, timeout=10)
+        data = r.json()
+        results = data.get("organic_results", [])
+        for result in results:
+            link = result.get("link", "").lower()
+            if site in link:
+                return True, result.get("link")
+        return False, None
+    except Exception as e:
+        return False, None
 
-
-async def run_analysis(company_name, progress_callback=None):
-    slug = clean_name(company_name)
+def analyze_company(company_name, progress_callback=None):
     results = {}
 
-    ensure_chromium()
+    if progress_callback:
+        progress_callback("Verification Instagram...")
+    ig, ig_url = search_social(company_name, "instagram", "instagram.com")
+    results["instagram"] = {"platform": "Instagram", "found": ig, "url": ig_url, "active": ig, "followers": None, "error": None}
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        )
-        page = await context.new_page()
+    if progress_callback:
+        progress_callback("Verification TikTok...")
+    tt, tt_url = search_social(company_name, "tiktok", "tiktok.com")
+    results["tiktok"] = {"platform": "TikTok", "found": tt, "url": tt_url, "active": tt, "followers": None, "error": None}
 
-        async def check(url, bad, good):
-            try:
-                await page.goto(url, timeout=20000, wait_until="domcontentloaded")
-                await page.wait_for_timeout(2000)
-                content = (await page.content()).lower()
-                final = page.url.lower()
-                if any(b in content for b in bad):
-                    return False
-                if slug in final:
-                    return True
-                if any(g in content for g in good):
-                    return True
-                return False
-            except Exception:
-                return False
+    if progress_callback:
+        progress_callback("Verification Facebook...")
+    fb, fb_url = search_social(company_name, "facebook", "facebook.com")
+    results["facebook"] = {"platform": "Facebook", "found": fb, "url": fb_url, "active": fb, "followers": None, "error": None}
 
-        if progress_callback:
-            progress_callback("Verification Instagram...")
-        ig = await check(
-            f"https://www.instagram.com/{slug}/",
-            ["page not found", "page introuvable", "sorry, this page"],
-            ["followers", "posts", slug]
-        )
-
-        if progress_callback:
-            progress_callback("Verification TikTok...")
-        tt = await check(
-            f"https://www.tiktok.com/@{slug}",
-            ["couldn't find this account", "ce compte est introuvable"],
-            [slug, "followers"]
-        )
-
-        if progress_callback:
-            progress_callback("Verification Facebook...")
-        fb = await check(
-            f"https://www.facebook.com/{slug}",
-            ["this page isn't available", "page not found"],
-            [slug, "facebook"]
-        )
-
-        if progress_callback:
-            progress_callback("Verification LinkedIn...")
-        li = await check(
-            f"https://www.linkedin.com/company/{slug}",
-            ["page introuvable", "no organization found"],
-            [slug, "linkedin"]
-        )
-
-        await browser.close()
-
-    def make(platform, found, url):
-        return {"platform": platform, "found": found, "url": url if found else None, "active": found, "followers": None, "error": None}
-
-    results["instagram"] = make("Instagram", ig, f"https://www.instagram.com/{slug}/")
-    results["tiktok"] = make("TikTok", tt, f"https://www.tiktok.com/@{slug}")
-    results["facebook"] = make("Facebook", fb, f"https://www.facebook.com/{slug}")
-    results["linkedin"] = make("LinkedIn", li, f"https://www.linkedin.com/company/{slug}")
+    if progress_callback:
+        progress_callback("Verification LinkedIn...")
+    li, li_url = search_social(company_name, "linkedin", "linkedin.com")
+    results["linkedin"] = {"platform": "LinkedIn", "found": li, "url": li_url, "active": li, "followers": None, "error": None}
 
     score = 0
     details = {}
@@ -112,7 +71,3 @@ async def run_analysis(company_name, progress_callback=None):
     results["score"] = {"total": score, "max": 100, "details": details, "label": label}
     results["company_name"] = company_name
     return results
-
-
-def analyze_company(company_name, progress_callback=None):
-    return asyncio.run(run_analysis(company_name, progress_callback))
