@@ -5,25 +5,32 @@ import requests
 SERPAPI_KEY = os.environ.get("SERPAPI_KEY", "")
 
 def clean_name(name):
-    return re.sub(r"[^a-z0-9\s]", "", name.lower()).strip()
+    return re.sub(r"[^a-z0-9]", "", name.lower()).strip()
 
 def search_social(company, platform, site):
     try:
+        slug = clean_name(company)
         params = {
             "engine": "google",
-            "q": f"{company} {platform} site:{site}",
+            "q": f"{company} {platform} officiel",
             "api_key": SERPAPI_KEY,
-            "num": 3,
+            "num": 5,
         }
         r = requests.get("https://serpapi.com/search", params=params, timeout=10)
         data = r.json()
         results = data.get("organic_results", [])
         for result in results:
             link = result.get("link", "").lower()
-            if site in link:
+            title = result.get("title", "").lower()
+            snippet = result.get("snippet", "").lower()
+            if site not in link:
+                continue
+            if slug in link:
+                return True, result.get("link")
+            if slug in title or slug in snippet:
                 return True, result.get("link")
         return False, None
-    except Exception as e:
+    except Exception:
         return False, None
 
 def analyze_company(company_name, progress_callback=None):
